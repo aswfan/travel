@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Place Autocomplete</title>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+
+    <!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script> -->
+
+    <link rel="stylesheet" type="text/css" href="style.css">
+  </head>
+  <body>
+    <div class="pac-card" id="pac-card">
+        <div id="pac-container">
+            <input id="pac-input" type="text"
+                placeholder="Enter a location">
+        </div>
+        <div>
+          <button type="button" id="viewbtn" style="background-color:rgb(44, 138, 192)">View</button>
+          <button type="button" id="pathbtn" style="background-color:rgb(44, 138, 192)">path</button>
+          <button type="button" id="addbtn" style="background-color:rgb(44, 138, 192)" hidden>Add</button>
+        </div>
+    </div>
+    <div id="map"></div>
+    <div id="infowindow-content">
+      <img src="" width="16" height="16" id="place-icon">
+      <span id="place-name"  class="title"></span><br>
+      <span id="place-address"></span>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/4.6.0/firebase.js"></script>
+    <script>
+      // Initialize Firebase
+      var config = {
+        apiKey: "AIzaSyAYLU2QtTp6uUAx19p5aAZcnVtQgiJcpEU",
+        authDomain: "winter-97507.firebaseapp.com",
+        databaseURL: "https://winter-97507.firebaseio.com",
+        projectId: "winter-97507",
+        storageBucket: "winter-97507.appspot.com",
+        messagingSenderId: "536098596828"
+      };
+      firebase.initializeApp(config);
+    </script>
+    <script>
+      var data = {
+        name: "",
+        lat: null,
+        lng: null,
+        address: "",
+
+      };
+
+      function initAuthentication(onAuthSuccess) {
+        firebase.authAnonymously(function(error, authData) {
+          if (error) {
+            console.log('Login Failed!', error);
+          } else {
+            data.sender = authData.uid;
+            onAuthSuccess();
+          }
+        }, {remember: 'sessionOnly'});  // Users will get a new id for every session.
+      }
+
+
+      function initMap() {
+        var map = new google.maps.Map(document.getElementById('map'), {
+          center: {lat: 40.714232, lng: -73.9612889},
+          zoom: 13
+        });
+        var card = document.getElementById('pac-card');
+        var input = document.getElementById('pac-input');
+        var types = document.getElementById('type-selector');
+        var strictBounds = document.getElementById('strict-bounds-selector');
+
+        map.controls[google.maps.ControlPosition.TOP_RIGHT].push(card);
+
+        var autocomplete = new google.maps.places.Autocomplete(input);
+        var directionsService = new google.maps.DirectionsService;
+        var directionsDisplay = new google.maps.DirectionsRenderer;
+        directionsDisplay.setMap(map);
+        autocomplete.bindTo('bounds', map);
+
+        var infowindow = new google.maps.InfoWindow();
+        var infowindowContent = document.getElementById('infowindow-content');
+        infowindow.setContent(infowindowContent);
+
+        document.getElementById('viewbtn').addEventListener('click', function() {
+          infowindow.close();
+          var marker = new google.maps.Marker({
+            map: map,
+            anchorPoint: new google.maps.Point(0, -29)
+          });
+          marker.setVisible(false);
+          var place = autocomplete.getPlace();
+          if (!place.geometry) {
+            window.alert("No details available for input: '" + place.name + "'");
+            return;
+          }
+          if (place.geometry.viewport) {
+            map.fitBounds(place.geometry.viewport);
+          } else {
+            map.setCenter(place.geometry.location);
+            map.setZoom(17);  // Why 17? Because it looks good.
+          }
+          marker.setPosition(place.geometry.location);
+          marker.setVisible(true);
+
+          var address = '';
+          if (place.address_components) {
+            address = [
+              (place.address_components[0] && place.address_components[0].short_name || ''),
+              (place.address_components[1] && place.address_components[1].short_name || ''),
+              (place.address_components[2] && place.address_components[2].short_name || '')
+            ].join(' ');
+          }
+
+          infowindowContent.children['place-name'].textContent = place.name;
+          infowindowContent.children['place-address'].textContent = address;
+          infowindow.open(map, marker);
+        });
+
+        document.getElementById('addbtn').addEventListener('click', function() {
+          var place = autocomplete.getPlace();
+          var address = '';
+          if (place.address_components) {
+            address = [
+              (place.address_components[0] && place.address_components[0].short_name || ''),
+              (place.address_components[1] && place.address_components[1].short_name || ''),
+              (place.address_components[2] && place.address_components[2].short_name || '')
+            ].join(' ');
+          }
+          data.name = place.name;
+          data.lat = place.geometry.location.lat();
+          data.lng = place.geometry.location.lng();
+          data.address = address;
+          addToFirebase(data);
+        });
+        
+        firebase.database().ref('markers/').once('value').then(function(snapshot) {
+          var prekey;
+          var sumlat = 0, sumlng = 0, size = 0;
+          for (var key in snapshot.val()) {
+            size++;
+            var detail = snapshot.val()[key];
+            sumlat += Number(detail.lat);
+            sumlng += Number(detail.lng);
+            var marker = new google.maps.Marker({
+              map: map,
+              anchorPoint: new google.maps.Point(0, -29)
+            });
+            var place = new google.maps.LatLng(detail.lat, detail.lng);
+            map.setZoom(7);
+            marker.setPosition(place);
+            marker.setVisible(true);
+            infowindow.close();
+            attachMessage(marker, detail);
+            if(prekey) {
+              calculateAndDisplayRoute(directionsService, directionsDisplay, prekey, key);
+            }
+            prekey = key;
+          }
+          map.setCenter(new google.maps.LatLng(sumlat/size, sumlng/size));
+        });
+
+        document.getElementById('pathbtn').addEventListener('click', function(){
+          if (directionsDisplay.getMap() != null) directionsDisplay.setMap(null);
+          else directionsDisplay.setMap(map);
+        })
+      }
+
+      function attachMessage(marker, place) {
+        var pcontent = "<p>Name: " + place.name + "</p>" + 
+          "<p>Address: " +  place.address + "</p>";
+        var infowindow = new google.maps.InfoWindow({
+          content: pcontent
+        });
+
+        marker.addListener('click', function() {
+          infowindow.open(marker.get('map'), marker);
+        });
+      }
+
+
+      function addToFirebase(data) {
+        firebase.database().ref('markers/' + data.name).set({
+          "lat": data.lat,
+          "lng": data.lng,
+          "address": data.address,
+          "name": data.name
+        });
+      }
+
+      function calculateAndDisplayRoute(directionsService, directionsDisplay, porigin, pdestination) {
+        directionsService.route({
+          origin: porigin,
+          destination:pdestination,
+          travelMode: 'DRIVING'
+        }, function(response, status) {
+          if (status === 'OK') {
+            directionsDisplay.setDirections(response);
+            directionsDisplay.setMap(null)
+          } else {
+            window.alert('Directions request failed due to ' + status);
+          }
+        });
+      }
+
+    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDznUBCJP5mWPUAi2lQKCC8Yjl9x3dOFl8&libraries=places&callback=initMap" async defer></script>
+  </body>
+</html>
