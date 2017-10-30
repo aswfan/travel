@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 set -e
-docker build -t yngf/17chris .
-docker push yngf/17chris
-go clean
+docker rmi yngf/17chrismas
+docker build -t yngf/17chrismas .
+docker push yngf/17chrismas
