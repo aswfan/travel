@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Place Autocomplete</title>
+    <title>Travel Plan</title>
     <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
     <meta charset="utf-8">
 
@@ -24,9 +24,10 @@
               <input id="pac-input" type="text" placeholder="Enter a location">
           </div>
           <div>
-            <button type="button" id="viewbtn" style="background-color:rgb(44, 138, 192)">View</button>
+            <button type="button" id="viewbtn" style="background-color:rgb(44, 138, 192)">view</button>
             <button type="button" id="pathbtn" style="background-color:rgb(44, 138, 192)">path</button>
-            <button type="button" id="addbtn" style="background-color:rgb(44, 138, 192)" hidden>Add</button>
+            <button type="button" id="addbtn" style="background-color:rgb(44, 138, 192)">add</button>
+            <button type="button" id="removebtn" style="background-color:rgb(44, 138, 192)">remove</button>
           </div>
         </div>
       </td>
@@ -43,6 +44,7 @@
                 <td><input id="to-input" type="text" placeholder="Enter a location"></td>
               </tr>
             </table>
+            <span><input id="color" type="text" placeholder="color" style="width:50px"></span>
             <button type="button" id="viewpath" style="background-color:rgb(44, 138, 192)">view</button>
             <button type="button" id="rmpath" style="background-color:rgb(44, 138, 192)">remove</button>
             <button type="button" id="addpath" style="background-color:rgb(44, 138, 192)">Add</button>
@@ -79,15 +81,34 @@
         address: "",
       };
 
+      function clearData(){
+        data = {
+          name: "",
+          lat: null,
+          lng: null,
+          address: "",
+        };
+      }
+
       var path = {
         name: "",
         from: null,
-        to: null
+        to: null,
+        color: ""
+      };
+
+      function clearPath(){
+        path = {
+          name: "",
+          from: null,
+          to: null,
+          color: ""
+        };
       }
 
       function initMap() {
         var map = new google.maps.Map(document.getElementById('map'), {
-          center: {lat: 40.714232, lng: -73.9612889},
+          center: {lat: 41.850033, lng: -87.6500523},
           zoom: 13,
           mapTypeControl: false
         });
@@ -96,6 +117,7 @@
         var input = document.getElementById('pac-input');
         var from_input = document.getElementById('from-input');
         var to_input = document.getElementById('to-input');
+        var color_input = document.getElementById('color');
         var types = document.getElementById('type-selector');
         var strictBounds = document.getElementById('strict-bounds-selector');
 
@@ -105,8 +127,6 @@
         var from_autocomplete = new google.maps.places.Autocomplete(from_input);
         var to_autocomplete = new google.maps.places.Autocomplete(to_input);
         var directionsService = new google.maps.DirectionsService;
-        var directionsDisplay = new google.maps.DirectionsRenderer;
-        directionsDisplay.setMap(map);
         autocomplete.bindTo('bounds', map);
         from_autocomplete.bindTo('bounds', map);
         to_autocomplete.bindTo('bounds', map);
@@ -123,8 +143,9 @@
           });
           marker.setVisible(false);
           var place = autocomplete.getPlace();
-          if (!place.geometry) {
-            window.alert("No details available for input: '" + place.name + "'");
+          if (!place || !place.geometry) {
+            input.value = ""; 
+            window.alert("Please reenter the address!");
             return;
           }
           if (place.geometry.viewport) {
@@ -151,6 +172,11 @@
 
         document.getElementById('addbtn').addEventListener('click', function() {
           var place = autocomplete.getPlace();
+          if(!place) {
+            input.value = ""; 
+            window.alert("Please reenter the address!");
+            return;
+          }
           var address = '';
           if (place.address_components) {
             address = [
@@ -159,14 +185,38 @@
               (place.address_components[2] && place.address_components[2].short_name || '')
             ].join(' ');
           }
-          data.name = place.name;
+          data.name = input.value;
           data.lat = place.geometry.location.lat();
           data.lng = place.geometry.location.lng();
           data.address = address;
           addMarkerToFirebase(data);
+          alert("add success!");
+          location.reload(true);
+        });
+
+        document.getElementById('removebtn').addEventListener('click', function() {
+          clearData();
+          var name = input.value;
+          firebase.database().ref('markers/' + name).remove();
+          alert("remove success!");
+          location.reload(true);
         });
 
         document.getElementById('viewpath').addEventListener('click', function(){
+          var directionsDisplay;
+          var mcolor = document.getElementById('color').value;
+          if(mcolor.length > 0) {
+            console.log(mcolor);
+            directionsDisplay = new google.maps.DirectionsRenderer({
+              polylineOptions: {
+                strokeColor: mcolor
+              },
+              suppressMarkers: true
+            });
+          } else {
+            directionsDisplay = new google.maps.DirectionsRenderer({suppressMarkers: true});
+          }
+          directionsDisplay.setMap(map);
           calculateAndDisplayRoute(directionsService, directionsDisplay, from_input.value, to_input.value);
         });
 
@@ -174,27 +224,31 @@
           path.name = from_input.value + "-" + to_input.value;
           path.from = from_input.value;
           path.to = to_input.value; 
+          path.color = color_input.value;
+          console.log(path.color);
           addPathToFirebase(path);
           alert("add success!");
-          refreshMap(map, infowindow, directionsService, directionsDisplay);
+          location.reload(true);
         });
 
         document.getElementById('rmpath').addEventListener('click', function(){
+          clearPath();
           var name = from_input.value + "-" + to_input.value;
           firebase.database().ref('path/' + name).remove();
           alert("remove success!");
-          refreshMap(map, infowindow, directionsService, directionsDisplay);
+          location.reload(true);
         });
 
-        refreshMap(map, infowindow, directionsService, directionsDisplay);
+        refreshMap(map, infowindow, directionsService);
         
         document.getElementById('pathbtn').addEventListener('click', function(){
           if (directionsDisplay.getMap() != null) directionsDisplay.setMap(null);
           else directionsDisplay.setMap(map);
         });
+        map.setCenter(new google.maps.LatLng(41.850033, -87.6500523));
       }
 
-      function refreshMap(map, infowindow, directionsService, directionsDisplay){
+      function refreshMap(map, infowindow, directionsService){
         firebase.database().ref('markers/').once('value').then(function(snapshot) {
           var sumlat = 0, sumlng = 0, size = 0;
           for (var key in snapshot.val()) {
@@ -207,18 +261,29 @@
               anchorPoint: new google.maps.Point(0, -29)
             });
             var place = new google.maps.LatLng(detail.lat, detail.lng);
-            map.setZoom(7);
+            map.setZoom(5);
             marker.setPosition(place);
             marker.setVisible(true);
             infowindow.close();
             attachMessage(marker, detail);
           }
-          map.setCenter(new google.maps.LatLng(sumlat/size, sumlng/size));
         });
 
         firebase.database().ref('path/').once('value').then(function(snapshot){
           for (var key in snapshot.val()) {
             var mpath = snapshot.val()[key];
+            var directionsDisplay;
+            if(mpath.color && mpath.color.length > 0) {
+              directionsDisplay = new google.maps.DirectionsRenderer({
+                polylineOptions: {
+                  strokeColor: mpath.color
+                },
+                suppressMarkers: true
+              });
+            } else {
+              directionsDisplay = new google.maps.DirectionsRenderer({suppressMarkers: true});
+            }
+            directionsDisplay.setMap(map);
             calculateAndDisplayRoute(directionsService, directionsDisplay, mpath.from, mpath.to);
           }
         });
@@ -230,16 +295,17 @@
         var infowindow = new google.maps.InfoWindow({
           content: pcontent
         });
-
         marker.addListener('click', function() {
           infowindow.open(marker.get('map'), marker);
+          document.getElementById('pac-input').value = place.name;
         });
       }
 
       function addPathToFirebase(path) {
         firebase.database().ref('path/' + path.name).set({
           "from": path.from,
-          "to": path.to
+          "to": path.to,
+          "color": path.color
         });
       }
 
